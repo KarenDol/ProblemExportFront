@@ -2,11 +2,13 @@
 
 import { useState } from "react"
 import { useStore } from "@/lib/store"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function LoginPage() {
+  const router = useRouter()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -25,11 +27,13 @@ export default function LoginPage() {
       return
     }
 
-    const ok = await login(username, password)
+    const success = await login(username, password)
     setLoading(false)
 
-    if (!ok) {
-      setError("Invalid username or password")
+    if (success) {
+      router.replace("/")
+    } else {
+      setError("Invalid credentials")
     }
   }
 

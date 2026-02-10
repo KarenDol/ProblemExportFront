@@ -25,8 +25,7 @@ export default function DashboardPage() {
     fetchQuizzes,
     setFile, 
     clearFile
-  } = useStore()
-  
+  } = useStore()  
 
   const [additionalPrompt, setAdditionalPrompt] = useState("")
 
@@ -49,13 +48,26 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border bg-card">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-foreground">Problem Upload Manager</h1>
-          <Button variant="outline" onClick={logout}>
-            Sign Out
-          </Button>
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center gap-3">
+          <h1 className="text-2xl font-bold text-foreground">
+            Problem Upload Manager
+          </h1>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => router.push("/queue")}
+            >
+              Go to Queue
+            </Button>
+
+            <Button variant="outline" onClick={logout}>
+              Sign Out
+            </Button>
+          </div>
         </div>
       </div>
+
 
       {/* Main content */}
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">

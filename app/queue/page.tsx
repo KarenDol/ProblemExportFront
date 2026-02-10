@@ -10,7 +10,15 @@ import ExportModal from "@/components/export-modal"
 
 export default function QueuePage() {
   const router = useRouter()
-  const {file, problems, addProblem, approveProblem, approveAllProblems} = useStore()
+  const {
+    file,
+    problems,
+    addProblem,
+    approveProblem,
+    approveAllProblems,
+    removeProblems,
+    clearProblems,
+  } = useStore()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isExportOpen, setIsExportOpen] = useState(false)
   const startedRef = useRef(false);
@@ -46,11 +54,22 @@ export default function QueuePage() {
     setSelectedIds(new Set())
   }
 
+  //Clear Problem and Remove Problem Logic
+  const handleRemoveSelected = () => {
+    removeProblems(Array.from(selectedIds))
+    setSelectedIds(new Set())
+  }
+
+  const handleClearQueue = () => {
+    clearProblems()
+    setSelectedIds(new Set())
+  }
+
   const fetchProblemsFromFile = async () => {
     const form = new FormData()
     form.append("file", file)
 
-    const res = await fetch("http://localhost:8000/upload", { method: "POST", body: form });
+    const res = await fetch("https://upload.a1s.kz/upload", { method: "POST", body: form });
     await streamJsonl(res, (obj) => {
       addProblem(normalizeProblem(obj));
     });
@@ -150,20 +169,42 @@ export default function QueuePage() {
           <Button variant="outline" onClick={handleSelectAll} size="sm">
             {selectedIds.size === problems.length ? "Deselect All" : "Select All"}
           </Button>
+
           {selectedIds.size > 0 && (
             <>
               <Button onClick={handleApproveSelected} size="sm">
                 Approve Selected ({selectedIds.size})
               </Button>
+
+              <Button variant="destructive" onClick={handleRemoveSelected} size="sm">
+                Remove Selected ({selectedIds.size})
+              </Button>
+
               <Button variant="outline" onClick={() => setSelectedIds(new Set())} size="sm">
                 Clear Selection
               </Button>
             </>
           )}
+
           <Button onClick={approveAllProblems} variant="outline" size="sm">
             Approve All
           </Button>
-          <Button onClick={() => setIsExportOpen(true)} className="ml-auto" disabled={approvedCount === 0}>
+
+          {problems.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={handleClearQueue}
+              size="sm"
+            >
+              Clear Queue
+            </Button>
+          )}
+
+          <Button
+            onClick={() => setIsExportOpen(true)}
+            className="ml-auto"
+            disabled={approvedCount === 0}
+          >
             Export to API ({approvedCount})
           </Button>
         </div>

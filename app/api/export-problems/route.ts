@@ -11,18 +11,22 @@ type IncomingProblem = {
   correctAnswer: string
   solution?: string
   approved: boolean
-  additionalPrompt?: string
+  additionalPrompt?: string,
+  pointsIfTrue: number,
+  pointsIfFalse: number,
 }
 
 type ExportRequestBody = {
   problems: IncomingProblem[]
-  // your selections from UI (strings, but contain numeric IDs)
-  product: string // curriculumId
-  quiz: string // quizId
-  subject: string // subjectId
-  brandId: string // brandId (get it from selected quiz)
+  product: string
+  curriculum: string
+  quiz: string
+  subject: string
+  brandId: string
   grade?: number
-  difficulty?: "easy" | "medium" | "hard"
+  difficulty?: "easy" | "medium" | "hard",
+  pointsIfTrue: number,
+  pointsIfFalse: number,
 }
 
 function toInt(x: unknown, fallback = 0) {
@@ -32,115 +36,136 @@ function toInt(x: unknown, fallback = 0) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = request.headers.get("authorization")
-    if (!auth?.startsWith("Bearer ")) {
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing Bearer token" }, { status: 401 })
     }
+
+    let accessToken = authHeader // we will mutate this after refresh
 
     const body = (await request.json()) as ExportRequestBody
     const {
       problems = [],
       product,
+      curriculum,
       quiz,
       subject,
       brandId,
-      grade = 9,
+      grade,
       difficulty = "easy",
+      pointsIfTrue,
+      pointsIfFalse,
     } = body
 
     const approved = problems.filter((p) => p.approved)
-    if (approved.length === 0) {
-      return NextResponse.json({ error: "No approved problems to export" }, { status: 400 })
+    if (!approved.length) {
+      return NextResponse.json(
+        { error: "No approved problems to export" },
+        { status: 400 }
+      )
     }
 
-    // Map UI selections -> Bestys required IDs
-    const curriculumId = toInt(product)
+    const curriculumId = toInt(curriculum)
     const quizId = toInt(quiz)
     const subjectId = toInt(subject)
     const resolvedBrandId = toInt(brandId)
 
-    const results = await Promise.all(
-      approved.map(async (p, idx) => {
-        // Build Bestys answers with isTrue (based on your correctAnswer = answer.id)
-        const answers = (p.answers ?? []).slice(0, 4).map((a) => ({
-          id: 0,
-          content: a.content ?? "",
-          isTrue: a.id === p.correctAnswer,
-          label: a.label ?? "",
-          pos: 0,
-        }))
+    const results: any[] = []
 
-        // Optional: enforce exactly 4 answers like your python
-        while (answers.length < 4) {
-          const label = String.fromCharCode(65 + answers.length) // A,B,C,D
-          answers.push({ id: 0, content: "", isTrue: false, label, pos: 0 })
-        }
+    // 🔁 SEQUENTIAL upload
+    for (let idx = 0; idx < approved.length; idx++) {
+      const p = approved[idx]
 
-        const payload = {
-          id: 0,
-          title: p.title?.trim() || `Problem ${idx + 1}`,
-          type: "multiple_choice",
-          langs: [],
-          answers,
+      const answers = (p.answers ?? []).slice(0, 4).map((a) => ({
+        id: 0,
+        content: a.content ?? "",
+        isTrue: a.id === p.correctAnswer,
+        label: a.label ?? "",
+        pos: 0,
+      }))
 
-          approvedAt: "",
-          author: "",
-          brand: "",
-          brandId: resolvedBrandId,
-          concepts: [],
-          content: p.content ?? "",
-          conversationId: null,
-          createdAt: "",
-          curriculumId,
-          difficulty,
-          fillBlankAnswers: null,
-          grade,
+      while (answers.length < 4) {
+        const label = String.fromCharCode(65 + answers.length)
+        answers.push({ id: 0, content: "", isTrue: false, label, pos: 0 })
+      }
 
-          participantAnswerId: 0,
-          points: 0,
-          pointsIfFalse: 0,
-          pointsIfTrue: 1,
+      const payload = {
+        id: 0,
+        title: p.title?.trim() || `Problem ${idx + 1}`,
+        type: "multiple_choice",
+        answers,
+        content: p.content ?? "",
+        curriculumId,
+        quizId,
+        subjectId,
+        brandId: resolvedBrandId,
+        grade,
+        difficulty,
+        solution: p.solution ?? "",
+        status: "review",
+        additionalPrompt: p.additionalPrompt ?? "",
+        pointsIfTrue: p.pointsIfTrue ?? pointsIfTrue ?? 1,
+        pointsIfFalse: p.pointsIfFalse ?? pointsIfFalse ?? 0,
+      }
 
-          quizId,
-          quizQuestionId: null,
-          quizQuestionStatus: null,
-          quizQuestionStatusReason: null,
-          sandboxId: null,
+      console.log(payload)
 
-          solution: p.solution ?? "",
-          status: "review",
-          subjectId,
-
-          // extra info if you want (Bestys might ignore unknown fields)
-          additionalPrompt: p.additionalPrompt ?? "",
-        }
-
-        const r = await fetch(BESTYS_URL, {
+      const send = async (token: string) =>
+        fetch(BESTYS_URL, {
           method: "POST",
           headers: {
-            Authorization: auth,
+            Authorization: token,
             "Content-Type": "application/json",
             Accept: "application/json",
           },
           body: JSON.stringify(payload),
         })
 
-        // Bestys returns JSON; keep text for debugging if it isn't JSON
-        const text = await r.text()
-        let json: any = null
-        try {
-          json = JSON.parse(text)
-          console.log(json)
-        } catch {}
+      let res = await send(accessToken)
 
-        return {
-          ok: r.ok,
-          status: r.status,
-          title: payload.title,
-          response: json ?? text,
+      // 🔁 refresh on 401
+      if (res.status === 401) {
+        console.log(`Problem ${idx + 1}: token expired → refreshing`)
+
+        const refreshRes = await fetch(
+          `${request.headers.get("origin")}/api/refresh-token`,
+          {
+            method: "GET",
+            headers: { Authorization: accessToken },
+          }
+        )
+
+        if (!refreshRes.ok) {
+          results.push({
+            ok: false,
+            title: payload.title,
+            status: 401,
+            error: "Refresh token expired",
+          })
+          break // STOP export — auth is dead
         }
+
+        const refreshed = await refreshRes.json()
+        accessToken = `Bearer ${refreshed.access_token}`
+
+        // retry once
+        res = await send(accessToken)
+      }
+
+      const json = await res.json()
+
+      console.log("Super data:\n", JSON.stringify(json, null, 2))
+
+      results.push({
+        ok: res.ok,
+        status: res.status,
+        title: payload.title,
+        response: json,
       })
-    )
+
+      // 🧠 small delay (optional but VERY effective)
+      await new Promise((r) => setTimeout(r, 120))
+    }
 
     const okCount = results.filter((x) => x.ok).length
     const failed = results.filter((x) => !x.ok)
@@ -149,11 +174,13 @@ export async function POST(request: NextRequest) {
       success: failed.length === 0,
       exported: okCount,
       failed: failed.length,
-      failures: failed.slice(0, 5), // limit noise
-      results, // remove if too verbose
+      failures: failed.slice(0, 5),
     })
   } catch (err) {
     console.error("Export error:", err)
-    return NextResponse.json({ error: "Failed to export problems" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Failed to export problems" },
+      { status: 500 }
+    )
   }
 }

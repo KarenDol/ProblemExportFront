@@ -19,7 +19,9 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
     problems,
     selectedProduct,
     selectedQuiz,
+    selectedSubjectId,
     selectedSubject,
+    selectedGrade,
     selectedBrandId,
   } = useStore()
 
@@ -59,10 +61,12 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
         },
         body: JSON.stringify({
           problems: approvedProblems,
-          product: selectedProduct,   // curriculumId
+          product: selectedProduct,   
+          curriculum: selectedSubject, // curriculumId
           quiz: selectedQuiz,         // quizId
-          subject: selectedSubject,   // subjectId
+          subject: selectedSubjectId,   // subjectId
           brandId: selectedBrandId,   // brandId
+          grade: selectedGrade,
         }),
       })
 

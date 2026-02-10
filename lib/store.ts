@@ -17,6 +17,8 @@ export interface Problem {
   solution: string
   approved: boolean
   additionalPrompt?: string
+  pointsIfTrue: number,
+  pointsIfFalse: number,
 }
 
 type Option = { id: Id; title: string }
@@ -24,6 +26,13 @@ type Option = { id: Id; title: string }
 type QuizOption = Option & {
   subjectId: Id
   brandId: Id
+  grade: number
+}
+
+const assertAuth = async (res: Response) => {
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("AUTH_INVALID")
+  }
 }
 
 interface StoreState {
@@ -49,10 +58,12 @@ interface StoreState {
 
   selectedBrandId: string
   selectedSubjectId: string
+  selectedGrade: number
 
   setSelectedProduct: (id: string) => void
   setSelectedQuiz: (id: string) => void
   setSelectedSubject: (id: string) => void
+  setSelectedGrade: (grade: number) => void
 
   // File (ephemeral)
   file: File | null
@@ -65,6 +76,7 @@ interface StoreState {
   updateProblem: (id: string, updates: Partial<Problem>) => void
   approveProblem: (id: string) => void
   approveAllProblems: () => void
+  removeProblems: (ids: string[]) => void
   clearProblems: () => void
 
   // UI
@@ -142,13 +154,11 @@ export const useStore = create<StoreState>((set, get) => ({
   logout: () => {
     storage.remove("token")
     storage.remove("userEmail")
-    storage.remove("problems")
 
     set({
       isLoggedIn: false,
       token: null,
       userEmail: "",
-      problems: [],
     })
   },
 
@@ -161,23 +171,27 @@ export const useStore = create<StoreState>((set, get) => ({
 
   fetchProducts: async () => {
     const token = get().token
-    if (!token) return console.warn("No token. Cannot fetch products.")
+    if (!token) throw new Error("NO_TOKEN")
 
     const res = await fetch("/api/products", {
       headers: { Authorization: `Bearer ${token}` },
     })
 
-    if (!res.ok) return console.error("Failed to fetch products:", await res.text())
+    await assertAuth(res)
 
-    const data = (await res.json()) as any[]
+    if (!res.ok) {
+      throw new Error(await res.text())
+    }
+
+    const data = await res.json()
     set({
-      products: data.map((p) => ({ id: p.id, title: p.title })),
+      products: data.map((p: any) => ({ id: p.id, title: p.title })),
     })
   },
 
   fetchQuizzes: async (productId) => {
     const token = get().token
-    if (!token) return console.warn("No token. Cannot fetch quizzes.")
+    if (!token) throw new Error("NO_TOKEN")
 
     const res = await fetch("/api/quizzes", {
       method: "POST",
@@ -188,18 +202,24 @@ export const useStore = create<StoreState>((set, get) => ({
       body: JSON.stringify({ product_id: productId }),
     })
 
-    if (!res.ok) return console.error("Failed to fetch quizzes:", await res.text())
+    await assertAuth(res)
 
-    const data = (await res.json()) as any[]
+    if (!res.ok) {
+      throw new Error(await res.text())
+    }
+
+    const data = await res.json()
     set({
-      quizzes: data.map((q) => ({
+      quizzes: data.map((q: any) => ({
         id: q.id,
         title: q.title,
         subjectId: q.subjectId,
         brandId: q.brandId,
+        grade: Number(q.gradeFrom ?? 9), // fallback if missing
       })),
     })
   },
+
 
   fetchSubjects: async (subjectId, brandId) => {
     const token = get().token
@@ -225,6 +245,7 @@ export const useStore = create<StoreState>((set, get) => ({
   // ========================
   // SELECTED VALUES
   // ========================
+  selectedGrade: 9, // default, choose what you want
   selectedProduct: "",
   selectedQuiz: "",
   selectedSubject: "",
@@ -239,6 +260,7 @@ export const useStore = create<StoreState>((set, get) => ({
       selectedSubject: "",
       selectedBrandId: "",
       selectedSubjectId: "",
+      selectedGrade: 9,
       quizzes: [],
       subjects: [],
     }),
@@ -251,6 +273,7 @@ export const useStore = create<StoreState>((set, get) => ({
       selectedSubject: "",
       selectedBrandId: quiz ? String(quiz.brandId) : "",
       selectedSubjectId: quiz ? String(quiz.subjectId) : "",
+      selectedGrade: quiz ? Number(quiz.grade) : 9,
       subjects: [],
     })
 
@@ -260,6 +283,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setSelectedSubject: (id) => set({ selectedSubject: id }),
+
+  setSelectedGrade: (grade) => set({ selectedGrade: grade }),
 
   // ========================
   // FILE (ephemeral)
@@ -296,6 +321,12 @@ export const useStore = create<StoreState>((set, get) => ({
   clearProblems: () => {
     storage.remove("problems")
     set({ problems: [] })
+  },
+
+  removeProblems: (ids) => {
+    const updated = get().problems.filter((p) => !ids.includes(p.id))
+    saveProblems(updated)
+    set({ problems: updated })
   },
 
   // ========================
