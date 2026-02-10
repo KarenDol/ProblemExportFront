@@ -44,6 +44,33 @@ export default function DashboardPage() {
   const canProceed =
     selectedProduct && selectedQuiz && selectedSubject && file
 
+  async function streamJsonl(res: Response, onObj: (o: any) => void) {
+    if (!res.body) throw new Error("No response body (streaming not supported).");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s) continue;
+        onObj(JSON.parse(s));
+      }
+    }
+
+    if (buffer.trim()) onObj(JSON.parse(buffer.trim()));
+  }
+
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -106,7 +133,7 @@ export default function DashboardPage() {
         {/* Action buttons */}
         <div className="flex gap-4">
           <Button
-            onClick={() => router.push("/queue")}
+            onClick={() => router.push("/queue?fetch=1")}
             disabled={!canProceed}
             className="flex-1"
             size="lg"

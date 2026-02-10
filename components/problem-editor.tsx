@@ -23,7 +23,7 @@ const Editor = dynamic(
 
 export default function ProblemEditor({ problem }: ProblemEditorProps) {
   const router = useRouter()
-  const { updateProblem, approveProblem } = useStore()
+  const { updateProblem } = useStore()
   const [formData, setFormData] = useState(problem)
   const [isSaving, setIsSaving] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -37,16 +37,16 @@ export default function ProblemEditor({ problem }: ProblemEditorProps) {
 
   const handleSave = async () => {
     setIsSaving(true)
-    updateProblem(problem.id, formData)
-    router.push("/queue")
-  }
 
-  const handleApprove = () => {
-    handleSave()
-    setTimeout(() => {
-      approveProblem(problem.id)
-      router.push("/queue")
-    }, 500)
+    try {
+      updateProblem(problem.id, formData)
+
+      alert("Problem updates have been saved successfully.")
+    } catch (e) {
+      alert("Failed to save problem updates.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const updateAnswer = (answerId: string, field: keyof Answer, value: string) => {
@@ -314,33 +314,13 @@ export default function ProblemEditor({ problem }: ProblemEditorProps) {
         </CardContent>
       </Card>
 
-      {/* Additional Prompt */}
-      {/* <Card>
-        <CardHeader>
-          <CardTitle>Additional Prompt</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            value={formData.additionalPrompt || ""}
-            onChange={(e) =>
-              setFormData({ ...formData, additionalPrompt: e.target.value })
-            }
-            className="min-h-24"
-          />
-        </CardContent>
-      </Card> */}
-
       {/* Actions */}
       <div className="flex gap-3">
+        <Button variant="outline" className="flex-1" onClick={() => router.push("/queue")}>
+          Back
+        </Button>
         <Button variant="outline" className="flex-1" onClick={handleSave}>
           Save
-        </Button>
-        <Button
-          className="flex-1"
-          disabled={!formData.correctAnswer}
-          onClick={handleApprove}
-        >
-          Approve
         </Button>
       </div>
     </div>

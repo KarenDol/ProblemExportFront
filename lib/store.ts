@@ -74,10 +74,9 @@ interface StoreState {
   problems: Problem[]
   addProblem: (problem: Problem) => void
   updateProblem: (id: string, updates: Partial<Problem>) => void
+  disapproveProblem: (id: string) => void
   approveProblem: (id: string) => void
-  approveAllProblems: () => void
   removeProblems: (ids: string[]) => void
-  clearProblems: () => void
 
   // UI
   currentProblemId: string | null
@@ -310,17 +309,22 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ problems: updated })
   },
 
-  approveProblem: (id) => get().updateProblem(id, { approved: true }),
+  disapproveProblem: (id) => {
+    const problem = get().problems.find(p => p.id === id)
+    if (!problem) return
 
-  approveAllProblems: () => {
-    const updated = get().problems.map((p) => ({ ...p, approved: true }))
-    saveProblems(updated)
-    set({ problems: updated })
+    get().updateProblem(id, {
+      approved: false,
+    })
   },
 
-  clearProblems: () => {
-    storage.remove("problems")
-    set({ problems: [] })
+  approveProblem: (id) => {
+    const problem = get().problems.find(p => p.id === id)
+    if (!problem) return
+
+    get().updateProblem(id, {
+      approved: true,
+    })
   },
 
   removeProblems: (ids) => {

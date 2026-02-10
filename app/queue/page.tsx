@@ -6,30 +6,137 @@ import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Progress } from "@/components/ui/progress"
 import ExportModal from "@/components/export-modal"
+import { useSearchParams } from "next/navigation"
 
 export default function QueuePage() {
   const router = useRouter()
-  const {
-    file,
-    problems,
-    addProblem,
-    approveProblem,
-    approveAllProblems,
-    removeProblems,
-    clearProblems,
-  } = useStore()
+
+  const file = useStore((s) => s.file)
+  const problems = useStore((s) => s.problems)
+  const addProblem = useStore((s) => s.addProblem)
+  const disapproveProblem = useStore((s) => s.disapproveProblem)
+  const approveProblem = useStore((s) => s.approveProblem)
+  const removeProblems = useStore((s) => s.removeProblems)
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isExportOpen, setIsExportOpen] = useState(false)
-  const startedRef = useRef(false);
+  const [isFetching, setIsFetching] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [progressText, setProgressText] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [stage, setStage] = useState<"idle" | "extracting" | "parsing" | "done">("idle")
+
+  const searchParams = useSearchParams()
+  const shouldFetch = searchParams.get("fetch") === "1"
+
+  const controllerRef = useRef<AbortController | null>(null)
+
+  const lastProgressRef = useRef(0)
+  const [isStalled, setIsStalled] = useState(false)
 
   useEffect(() => {
-    if (!file) return;
-    if (startedRef.current) return; // prevent double-run in React Strict Mode
-    startedRef.current = true;
+    if (!isFetching) return
+    const t = setInterval(() => {
+      setIsStalled(progress === lastProgressRef.current)
+    }, 1200)
+    return () => clearInterval(t)
+  }, [isFetching, progress])
 
-    fetchProblemsFromFile().catch(console.error);
-  }, [file]);
+  const runIdRef = useRef(0)
+
+  useEffect(() => {
+    if (!shouldFetch || !file) return
+
+    runIdRef.current += 1
+    const runId = runIdRef.current
+
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+
+    setIsFetching(true)
+    setProgress(0)
+    setProgressText("Starting…")
+    setError(null)
+
+    ;(async () => {
+      try {
+        const form = new FormData()
+        form.append("file", file)
+
+        const res = await fetch("https://upload.a1s.kz/upload", {
+          method: "POST",
+          body: form,
+          signal: controller.signal,
+        })
+
+        if (!res.ok) throw new Error(await res.text())
+
+        await streamJsonl(res, (obj) => {
+          if (runId !== runIdRef.current) return
+
+          if (obj?.type === "progress") {
+            lastProgressRef.current = obj.percent ?? 0
+            setProgress(obj.percent ?? 0)
+            setProgressText(`${obj.current}/${obj.total} pages`)
+            return
+          }
+
+          addProblem(normalizeProblem(obj))
+        })
+
+        if (runId !== runIdRef.current) return
+        setProgress(100)
+        setProgressText("Done")
+      } catch (e: any) {
+        if (e?.name === "AbortError") return
+        if (runId !== runIdRef.current) return
+        setError(e?.message ?? "Failed to fetch problems")
+      } finally {
+        if (runId !== runIdRef.current) return
+        setIsFetching(false)
+      }
+    })()
+
+    return () => controller.abort()
+  }, [shouldFetch, file, addProblem])
+
+
+  async function streamJsonl(res: Response, onObj: (o: any) => void) {
+    if (!res.body) throw new Error("No response body")
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder("utf-8")
+    let buffer = ""
+
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      let idx
+      while ((idx = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, idx).trim()
+        buffer = buffer.slice(idx + 1)
+        if (!line) continue
+        onObj(JSON.parse(line))
+      }
+    }
+
+    if (buffer.trim()) onObj(JSON.parse(buffer.trim()))
+  }
+
+  const cancelFetch = () => {
+    controllerRef.current?.abort()
+    controllerRef.current = null
+    setIsFetching(false)
+    setProgressText("Canceled")
+  }
+
+
 
   const handleSelectProblem = (id: string) => {
     const newSelected = new Set(selectedIds)
@@ -49,6 +156,11 @@ export default function QueuePage() {
     }
   }
 
+  const handleDisapproveSelected = () => {
+    selectedIds.forEach((id) => disapproveProblem(id))
+    setSelectedIds(new Set())
+  }
+
   const handleApproveSelected = () => {
     selectedIds.forEach((id) => approveProblem(id))
     setSelectedIds(new Set())
@@ -58,47 +170,6 @@ export default function QueuePage() {
   const handleRemoveSelected = () => {
     removeProblems(Array.from(selectedIds))
     setSelectedIds(new Set())
-  }
-
-  const handleClearQueue = () => {
-    clearProblems()
-    setSelectedIds(new Set())
-  }
-
-  const fetchProblemsFromFile = async () => {
-    const form = new FormData()
-    form.append("file", file)
-
-    const res = await fetch("https://upload.a1s.kz/upload", { method: "POST", body: form });
-    await streamJsonl(res, (obj) => {
-      addProblem(normalizeProblem(obj));
-    });
-  }
-
-  async function streamJsonl(res: Response, onObj: (o: any) => void) {
-    if (!res.body) throw new Error("No response body (streaming not supported).");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const s = line.trim();
-        if (!s) continue;
-        onObj(JSON.parse(s));
-      }
-    }
-
-    if (buffer.trim()) onObj(JSON.parse(buffer.trim()));
   }
 
   function normalizeProblem(raw: any): Problem {
@@ -165,6 +236,42 @@ export default function QueuePage() {
           </Card>
         </div>
 
+        {isFetching && (
+          <Card className="border-border">
+            <CardContent className="pt-6 space-y-3">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>Parsing file…</span>
+                <span>{progressText} · {progress}%</span>
+              </div>
+              <div className={isStalled ? "animate-[wiggle_0.6s_ease-in-out_infinite]" : ""}>
+                <Progress value={progress} />
+              </div>
+              <style jsx>{`
+                @keyframes wiggle {
+                  0% { transform: translateX(0); }
+                  25% { transform: translateX(-2px); }
+                  50% { transform: translateX(2px); }
+                  75% { transform: translateX(-1px); }
+                  100% { transform: translateX(0); }
+                }
+              `}</style>
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={cancelFetch}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {error && (
+          <Card className="border-border">
+            <CardContent className="pt-6 text-sm text-destructive">
+              {error}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={handleSelectAll} size="sm">
             {selectedIds.size === problems.length ? "Deselect All" : "Select All"}
@@ -172,6 +279,10 @@ export default function QueuePage() {
 
           {selectedIds.size > 0 && (
             <>
+            <Button onClick={handleDisapproveSelected} size="sm">
+                Diapprove Selected ({selectedIds.size})
+              </Button>
+
               <Button onClick={handleApproveSelected} size="sm">
                 Approve Selected ({selectedIds.size})
               </Button>
@@ -179,25 +290,7 @@ export default function QueuePage() {
               <Button variant="destructive" onClick={handleRemoveSelected} size="sm">
                 Remove Selected ({selectedIds.size})
               </Button>
-
-              <Button variant="outline" onClick={() => setSelectedIds(new Set())} size="sm">
-                Clear Selection
-              </Button>
             </>
-          )}
-
-          <Button onClick={approveAllProblems} variant="outline" size="sm">
-            Approve All
-          </Button>
-
-          {problems.length > 0 && (
-            <Button
-              variant="destructive"
-              onClick={handleClearQueue}
-              size="sm"
-            >
-              Clear Queue
-            </Button>
           )}
 
           <Button
