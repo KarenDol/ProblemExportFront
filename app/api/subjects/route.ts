@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
+import { getRequestOrigin, originHeaders } from "@/lib/api-origin"
 
 export async function POST(req: Request) {
   try {
     const body = await req.json()
     const { subjectId, brandId } = body
+    const origin = getRequestOrigin(req)
 
     if (!subjectId || !brandId) {
       return NextResponse.json(
@@ -12,7 +14,6 @@ export async function POST(req: Request) {
       )
     }
 
-    // Extract token from client request (Zustand fetchSubjects)
     const rawAuth = req.headers.get("authorization")
     const token = rawAuth?.replace("Bearer ", "")
 
@@ -24,9 +25,8 @@ export async function POST(req: Request) {
     }
 
     const url =
-      `https://api.bestys.co/api/curriculum/search?subjectId=${subjectId}&brandId=${brandId}`
+      `https://back.bestys.co/api/curriculum/search?subjectId=${subjectId}&brandId=${brandId}`
 
-    // Log for debugging
     console.log("BESTYS URL:", url)
     console.log("JWT:", token.substring(0, 20) + "...")
 
@@ -35,8 +35,7 @@ export async function POST(req: Request) {
       headers: {
         Accept: "application/json, text/plain, */*",
         Authorization: `Bearer ${token}`,
-        Origin: "https://app.eduverse.kz",
-        Referer: "https://app.eduverse.kz/",
+        ...originHeaders(origin),
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
       },

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
-
+import { getRequestOrigin, originHeaders } from "@/lib/api-origin"
 
 export async function POST(req: Request) {
   const body = await req.json()
   const product_id = body.product_id
+  const origin = getRequestOrigin(req)
   console.log(product_id)
 
-  // extract token coming from Zustand → fetchQuizzes
   const token = req.headers.get("authorization")?.replace("Bearer ", "")
 
   if (!token) {
@@ -16,9 +16,8 @@ export async function POST(req: Request) {
     )
   }
 
-  const url = "https://api.bestys.co/api/quiz/search"
+  const url = "https://back.bestys.co/api/quiz/search"
 
-  // helper to call upstream
   const callUpstream = async (token: string) => {
     return fetch(url, {
       method: "POST",
@@ -26,8 +25,7 @@ export async function POST(req: Request) {
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        "Origin": "https://app.eduverse.kz",
-        "Referer": "https://app.eduverse.kz/",
+        ...originHeaders(origin),
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
       },
@@ -48,15 +46,15 @@ export async function POST(req: Request) {
   // 2️⃣ If expired → refresh token → retry once
   if (res.status === 401) {
     console.log("Access token expired → refreshing")
-
+    const refreshHeaders: Record<string, string> = {
+      Authorization: req.headers.get("authorization")!,
+    }
+    if (req.headers.get("x-platform-origin")) {
+      refreshHeaders["X-Platform-Origin"] = req.headers.get("x-platform-origin")!
+    }
     const refreshRes = await fetch(
-      `${req.headers.get("origin")}/api/refresh-token`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: req.headers.get("authorization")!, // refresh token stored the same way
-        },
-      }
+      `${req.headers.get("origin") || "http://localhost:3000"}/api/refresh-token`,
+      { method: "GET", headers: refreshHeaders }
     )
 
     if (!refreshRes.ok) {
@@ -66,7 +64,7 @@ export async function POST(req: Request) {
       )
     }
 
-  const refreshed = await refreshRes.json()
+    const refreshed = await refreshRes.json()
     const newAccessToken = refreshed.access_token
 
     if (!newAccessToken) {
@@ -76,7 +74,6 @@ export async function POST(req: Request) {
       )
     }
 
-    // 🔁 retry original request
     res = await callUpstream(newAccessToken)
   }
 

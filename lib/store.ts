@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { getPlatformOriginHeader, clearStoredPlatform } from "./platform"
 
 export type Id = string | number
 
@@ -125,9 +126,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
   login: async (username, password) => {
     try {
+      const origin = getPlatformOriginHeader()
       const res = await fetch("/api/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(origin ? { "X-Platform-Origin": origin } : {}),
+        },
         body: JSON.stringify({ username, password }),
       })
 
@@ -153,6 +158,7 @@ export const useStore = create<StoreState>((set, get) => ({
   logout: () => {
     storage.remove("token")
     storage.remove("userEmail")
+    clearStoredPlatform()
 
     set({
       isLoggedIn: false,
@@ -171,9 +177,13 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchProducts: async () => {
     const token = get().token
     if (!token) throw new Error("NO_TOKEN")
+    const origin = getPlatformOriginHeader()
 
     const res = await fetch("/api/products", {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(origin ? { "X-Platform-Origin": origin } : {}),
+      },
     })
 
     await assertAuth(res)
@@ -191,12 +201,14 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchQuizzes: async (productId) => {
     const token = get().token
     if (!token) throw new Error("NO_TOKEN")
+    const origin = getPlatformOriginHeader()
 
     const res = await fetch("/api/quizzes", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        ...(origin ? { "X-Platform-Origin": origin } : {}),
       },
       body: JSON.stringify({ product_id: productId }),
     })
@@ -223,12 +235,14 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchSubjects: async (subjectId, brandId) => {
     const token = get().token
     if (!token) return console.warn("No token. Cannot fetch subjects.")
+    const origin = getPlatformOriginHeader()
 
     const res = await fetch("/api/subjects", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
+        ...(origin ? { "X-Platform-Origin": origin } : {}),
       },
       body: JSON.stringify({ subjectId, brandId }),
     })

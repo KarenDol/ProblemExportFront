@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
+import { getRequestOrigin, originHeaders } from "@/lib/api-origin"
 
 export async function GET(req: Request) {
-  // 1. Extract refresh token from Authorization header
   const refreshToken = req.headers
     .get("authorization")
     ?.replace("Bearer ", "")
@@ -13,20 +13,18 @@ export async function GET(req: Request) {
     )
   }
 
-  // 2. Forward refresh token to upstream API
+  const origin = getRequestOrigin(req)
+
   const upstreamRes = await fetch(
-    "https://api.bestys.co/api/refresh/token",
+    "https://back.bestys.co/api/refresh/token",
     {
       method: "GET",
       headers: {
         "Accept": "application/json, text/plain, */*",
         "Authorization": `Bearer ${refreshToken}`,
-        "Origin": "https://app.eduverse.kz",
-        "Referer": "https://app.eduverse.kz/",
+        ...originHeaders(origin),
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-
-        // same cross-site headers style
         "Sec-Fetch-Site": "cross-site",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Dest": "empty",

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getRequestOrigin, originHeaders } from "@/lib/api-origin"
 
-const BESTYS_URL = "https://api.bestys.co/api/question/add"
+const BESTYS_URL = "https://back.bestys.co/api/question/add"
 
 type IncomingAnswer = { id: string; label: string; content: string }
 type IncomingProblem = {
@@ -40,8 +41,9 @@ export async function POST(request: NextRequest) {
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing Bearer token" }, { status: 401 })
     }
+    const origin = getRequestOrigin(request)
 
-    let accessToken = authHeader // we will mutate this after refresh
+    let accessToken = authHeader
 
     const body = (await request.json()) as ExportRequestBody
     const {
@@ -117,6 +119,7 @@ export async function POST(request: NextRequest) {
             Authorization: token,
             "Content-Type": "application/json",
             Accept: "application/json",
+            ...originHeaders(origin),
           },
           body: JSON.stringify(payload),
         })
@@ -127,12 +130,13 @@ export async function POST(request: NextRequest) {
       if (res.status === 401) {
         console.log(`Problem ${idx + 1}: token expired → refreshing`)
 
+        const refreshHeaders: Record<string, string> = { Authorization: accessToken }
+        if (request.headers.get("x-platform-origin")) {
+          refreshHeaders["X-Platform-Origin"] = request.headers.get("x-platform-origin")!
+        }
         const refreshRes = await fetch(
-          `${request.headers.get("origin")}/api/refresh-token`,
-          {
-            method: "GET",
-            headers: { Authorization: accessToken },
-          }
+          `${request.headers.get("origin") || "http://localhost:3000"}/api/refresh-token`,
+          { method: "GET", headers: refreshHeaders }
         )
 
         if (!refreshRes.ok) {

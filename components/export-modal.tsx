@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useStore } from "@/lib/store"
+import { getPlatformOriginHeader } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -53,11 +54,13 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
     setMessage("")
 
     try {
+      const origin = getPlatformOriginHeader()
       const res = await fetch("/api/export-problems", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`, // ✅ required for Bestys
+          ...(origin ? { "X-Platform-Origin": origin } : {}),
         },
         body: JSON.stringify({
           problems: approvedProblems,

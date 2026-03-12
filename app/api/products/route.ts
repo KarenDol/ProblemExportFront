@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
+import { getRequestOrigin, originHeaders } from "@/lib/api-origin"
 
 export async function GET(req: Request) {
-  // access token from Zustand
   const accessToken = req.headers
     .get("authorization")
     ?.replace("Bearer ", "")
@@ -10,7 +10,8 @@ export async function GET(req: Request) {
     return new Response("Unauthorized", { status: 401 })
   }
 
-  const url = "https://api.bestys.co/api/product/search"
+  const origin = getRequestOrigin(req)
+  const url = "https://back.bestys.co/api/product/search"
 
   const body = {
     brandId: null,
@@ -21,7 +22,6 @@ export async function GET(req: Request) {
     subjectId: null,
   }
 
-  // helper to call upstream
   const callUpstream = async (token: string) => {
     return fetch(url, {
       method: "POST",
@@ -31,8 +31,7 @@ export async function GET(req: Request) {
         "Authorization": `Bearer ${token}`,
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
-        "Origin": "https://app.eduverse.kz",
-        "Referer": "https://app.eduverse.kz/",
+        ...originHeaders(origin),
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
         "Sec-Fetch-Site": "cross-site",
@@ -45,18 +44,17 @@ export async function GET(req: Request) {
   // 1️⃣ first attempt
   let res = await callUpstream(accessToken)
 
-  // 2️⃣ if expired → refresh → retry
   if (res.status === 401) {
     console.log("Products: token expired → refreshing")
-
+    const refreshHeaders: Record<string, string> = {
+      Authorization: req.headers.get("authorization")!,
+    }
+    if (req.headers.get("x-platform-origin")) {
+      refreshHeaders["X-Platform-Origin"] = req.headers.get("x-platform-origin")!
+    }
     const refreshRes = await fetch(
-      `${req.headers.get("origin")}/api/refresh-token`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: req.headers.get("authorization")!,
-        },
-      }
+      `${req.headers.get("origin") || req.headers.get("referer")?.replace(/\/$/, "") || "http://localhost:3000"}/api/refresh-token`,
+      { method: "GET", headers: refreshHeaders }
     )
 
     if (!refreshRes.ok) {
