@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { Suspense, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
@@ -9,8 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
 import ExportModal from "@/components/export-modal"
 import { useSearchParams } from "next/navigation"
+import type { Problem } from "@/lib/store"
 
-export default function QueuePage() {
+function QueuePageContent() {
   const router = useRouter()
 
   const file = useStore((s) => s.file)
@@ -172,7 +173,7 @@ export default function QueuePage() {
     setSelectedIds(new Set())
   }
 
-  function normalizeProblem(raw: any): Problem {
+  function normalizeProblem(raw: any) {
     const answers = (raw.answers ?? []).map((a: any, i: number) => ({
       id: crypto.randomUUID(),
       label: String.fromCharCode(65 + i), // A,B,C,D
@@ -183,13 +184,15 @@ export default function QueuePage() {
 
     return {
       id: crypto.randomUUID(),
-      title: raw.title ?? "",            
+      title: raw.title ?? "",
       content: raw.content ?? "",
       answers,
       correctAnswer: correctIndex >= 0 ? answers[correctIndex].id : "",
       solution: raw.solution ?? "",
       approved: false,
-    };
+      pointsIfTrue: 1,
+      pointsIfFalse: 0,
+    } satisfies Problem
   }
 
   const approvedCount = problems.filter((p) => p.approved).length
@@ -342,5 +345,21 @@ export default function QueuePage() {
 
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
     </div>
+  )
+}
+
+function QueuePageFallback() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-muted-foreground">Loading…</div>
+    </div>
+  )
+}
+
+export default function QueuePage() {
+  return (
+    <Suspense fallback={<QueuePageFallback />}>
+      <QueuePageContent />
+    </Suspense>
   )
 }
