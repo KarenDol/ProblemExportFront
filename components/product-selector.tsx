@@ -22,21 +22,12 @@ interface ProductSelectorProps {
 export default function ProductSelector({ label, options = [] }: ProductSelectorProps) {
   const store = useStore()
 
-  const key = label.toLowerCase() as "product" | "quiz" | "subject"
+  const key = label.toLowerCase() as "product" | "quiz"
 
-  const value =
-    key === "product"
-      ? store.selectedProduct
-      : key === "quiz"
-      ? store.selectedQuiz
-      : store.selectedSubject
+  const value = key === "product" ? store.selectedProduct : store.selectedQuiz
 
   const setter =
-    key === "product"
-      ? store.setSelectedProduct
-      : key === "quiz"
-      ? store.setSelectedQuiz
-      : store.setSelectedSubject
+    key === "product" ? store.setSelectedProduct : store.setSelectedQuiz
 
   return (
     <div className="space-y-2">

@@ -16,16 +16,16 @@ export default function DashboardPage() {
     logout,
     selectedProduct,
     selectedQuiz,
-    selectedSubject,
+    selectedCurriculumId,
+    isLoadingCurriculum,
     products,
     quizzes,
-    subjects,
-    file,        
+    file,
     fetchProducts,
     fetchQuizzes,
-    setFile, 
-    clearFile
-  } = useStore()  
+    setFile,
+    clearFile,
+  } = useStore()
 
   const [additionalPrompt, setAdditionalPrompt] = useState("")
 
@@ -42,7 +42,13 @@ export default function DashboardPage() {
   }, [selectedProduct, fetchQuizzes])
 
   const canProceed =
-    selectedProduct && selectedQuiz && selectedSubject && file
+    Boolean(
+      selectedProduct &&
+        selectedQuiz &&
+        selectedCurriculumId &&
+        file &&
+        !isLoadingCurriculum
+    )
 
   async function streamJsonl(res: Response, onObj: (o: any) => void) {
     if (!res.body) throw new Error("No response body (streaming not supported).");
@@ -100,11 +106,16 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
         {/* Selection section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ProductSelector label="Product" options={products} />
           <ProductSelector label="Quiz" options={quizzes} />
-          <ProductSelector label="Subject" options={subjects} />
         </div>
+
+        {isLoadingCurriculum && (
+          <p className="text-sm text-muted-foreground">
+            Resolving curriculum for the selected quiz…
+          </p>
+        )}
 
         {/* Upload section */}
         <Card className="border-border">

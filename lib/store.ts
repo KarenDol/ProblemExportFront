@@ -28,6 +28,8 @@ type QuizOption = Option & {
   subjectId: Id
   brandId: Id
   grade: number
+  /** Display name from quiz/search (e.g. "Mathematics") */
+  subject?: string
 }
 
 const assertAuth = async (res: Response) => {
@@ -44,26 +46,28 @@ interface StoreState {
   login: (username: string, password: string) => Promise<boolean>
   logout: () => void
 
-  // Products / Quizzes / Subjects
+  // Products / Quizzes
   products: Option[]
   quizzes: QuizOption[]
-  subjects: Option[]
 
   fetchProducts: () => Promise<void>
   fetchQuizzes: (productId: string) => Promise<void>
-  fetchSubjects: (subjectId: string, brandId: string) => Promise<void>
 
   selectedProduct: string
   selectedQuiz: string
-  selectedSubject: string
+
+  /** Subject id from the selected quiz (Bestys subjectId) */
+  selectedSubjectId: string
+  /** First curriculum for quiz subject+brand (Bestys curriculumId); loaded when quiz is chosen */
+  selectedCurriculumId: string
+  isLoadingCurriculum: boolean
+  curriculumRequestId: number
 
   selectedBrandId: string
-  selectedSubjectId: string
   selectedGrade: number
 
   setSelectedProduct: (id: string) => void
   setSelectedQuiz: (id: string) => void
-  setSelectedSubject: (id: string) => void
   setSelectedGrade: (grade: number) => void
 
   // File (ephemeral)
@@ -168,11 +172,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   // ========================
-  // PRODUCTS / QUIZZES / SUBJECTS
+  // PRODUCTS / QUIZZES
   // ========================
   products: [],
   quizzes: [],
-  subjects: [],
 
   fetchProducts: async () => {
     const token = get().token
@@ -227,31 +230,8 @@ export const useStore = create<StoreState>((set, get) => ({
         subjectId: q.subjectId,
         brandId: q.brandId,
         grade: Number(q.gradeFrom ?? 9), // fallback if missing
+        subject: q.subject != null ? String(q.subject) : undefined,
       })),
-    })
-  },
-
-
-  fetchSubjects: async (subjectId, brandId) => {
-    const token = get().token
-    if (!token) return console.warn("No token. Cannot fetch subjects.")
-    const origin = getPlatformOriginHeader()
-
-    const res = await fetch("/api/subjects", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        ...(origin ? { "X-Platform-Origin": origin } : {}),
-      },
-      body: JSON.stringify({ subjectId, brandId }),
-    })
-
-    if (!res.ok) return console.error("Failed to fetch subjects:", await res.text())
-
-    const data = (await res.json()) as any[]
-    set({
-      subjects: data.map((s) => ({ id: s.id, title: s.title })),
     })
   },
 
@@ -261,41 +241,89 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedGrade: 9, // default, choose what you want
   selectedProduct: "",
   selectedQuiz: "",
-  selectedSubject: "",
 
   selectedBrandId: "",
   selectedSubjectId: "",
+  selectedCurriculumId: "",
+  isLoadingCurriculum: false,
+  curriculumRequestId: 0,
 
   setSelectedProduct: (id) =>
-    set({
+    set((s) => ({
       selectedProduct: id,
       selectedQuiz: "",
-      selectedSubject: "",
       selectedBrandId: "",
       selectedSubjectId: "",
+      selectedCurriculumId: "",
       selectedGrade: 9,
       quizzes: [],
-      subjects: [],
-    }),
+      isLoadingCurriculum: false,
+      curriculumRequestId: s.curriculumRequestId + 1,
+    })),
 
   setSelectedQuiz: (quizId) => {
     const quiz = get().quizzes.find((q) => String(q.id) === String(quizId))
+    const reqId = get().curriculumRequestId + 1
 
     set({
       selectedQuiz: quizId,
-      selectedSubject: "",
       selectedBrandId: quiz ? String(quiz.brandId) : "",
       selectedSubjectId: quiz ? String(quiz.subjectId) : "",
+      selectedCurriculumId: "",
       selectedGrade: quiz ? Number(quiz.grade) : 9,
-      subjects: [],
+      isLoadingCurriculum: !!quiz,
+      curriculumRequestId: reqId,
     })
 
-    if (quiz) {
-      get().fetchSubjects(String(quiz.subjectId), String(quiz.brandId))
-    }
-  },
+    if (!quiz) return
 
-  setSelectedSubject: (id) => set({ selectedSubject: id }),
+    const token = get().token
+    if (!token) {
+      set({ isLoadingCurriculum: false })
+      return console.warn("No token. Cannot load curriculum.")
+    }
+
+    void (async () => {
+      const origin = getPlatformOriginHeader()
+      try {
+        const res = await fetch("/api/subjects", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            ...(origin ? { "X-Platform-Origin": origin } : {}),
+          },
+          body: JSON.stringify({
+            subjectId: String(quiz.subjectId),
+            brandId: String(quiz.brandId),
+          }),
+        })
+
+        if (get().curriculumRequestId !== reqId) return
+
+        if (!res.ok) {
+          console.error("Failed to fetch curriculum list:", await res.text())
+          set({ isLoadingCurriculum: false })
+          return
+        }
+
+        const data = (await res.json()) as { id: number | string; title?: string }[]
+        const first = Array.isArray(data) && data.length > 0 ? data[0] : null
+
+        if (get().curriculumRequestId !== reqId) return
+
+        set({
+          selectedCurriculumId: first ? String(first.id) : "",
+          isLoadingCurriculum: false,
+        })
+      } catch (e) {
+        console.error("Curriculum fetch error:", e)
+        if (get().curriculumRequestId === reqId) {
+          set({ isLoadingCurriculum: false })
+        }
+      }
+    })()
+  },
 
   setSelectedGrade: (grade) => set({ selectedGrade: grade }),
 

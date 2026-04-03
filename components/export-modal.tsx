@@ -21,7 +21,7 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
     selectedProduct,
     selectedQuiz,
     selectedSubjectId,
-    selectedSubject,
+    selectedCurriculumId,
     selectedGrade,
     selectedBrandId,
   } = useStore()
@@ -45,8 +45,16 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
       setMessage("No approved problems to export.")
       return
     }
-    if (!selectedProduct || !selectedQuiz || !selectedSubject || !selectedBrandId) {
-      setMessage("Please select Product, Quiz, Subject (and brand) before exporting.")
+    if (
+      !selectedProduct ||
+      !selectedQuiz ||
+      !selectedCurriculumId ||
+      !selectedSubjectId ||
+      !selectedBrandId
+    ) {
+      setMessage(
+        "Please select Product and Quiz before exporting (curriculum and subject come from the quiz)."
+      )
       return
     }
 
@@ -64,11 +72,11 @@ export default function ExportModal({ isOpen, onClose }: ExportModalProps) {
         },
         body: JSON.stringify({
           problems: approvedProblems,
-          product: selectedProduct,   
-          curriculum: selectedSubject, // curriculumId
-          quiz: selectedQuiz,         // quizId
-          subject: selectedSubjectId,   // subjectId
-          brandId: selectedBrandId,   // brandId
+          product: selectedProduct,
+          curriculum: selectedCurriculumId,
+          quiz: selectedQuiz,
+          subject: selectedSubjectId,
+          brandId: selectedBrandId,
           grade: selectedGrade,
         }),
       })
